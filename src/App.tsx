@@ -49,19 +49,22 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  const handleDeleteTodo = useCallback(async (id: number) => {
-    setLoadingTodosIds(prev => [...prev, id]);
+  const handleDeleteTodo = useCallback(
+    async (id: number) => {
+      setLoadingTodosIds(prev => [...prev, id]);
 
-    try {
-      await deleteTodo(id);
-      setTodos(prev => prev.filter(todo => todo.id !== id));
-      focusInput();
-    } catch {
-      showError('Unable to delete a todo');
-    } finally {
-      setLoadingTodosIds(prev => prev.filter(todoId => todoId !== id));
-    }
-  }, [focusInput, showError]);
+      try {
+        await deleteTodo(id);
+        setTodos(prev => prev.filter(todo => todo.id !== id));
+        focusInput();
+      } catch {
+        showError('Unable to delete a todo');
+      } finally {
+        setLoadingTodosIds(prev => prev.filter(todoId => todoId !== id));
+      }
+    },
+    [focusInput, showError],
+  );
 
   const handleStartEditing = (todo: Todo) => {
     setEditingTodoId(todo.id);
@@ -169,7 +172,8 @@ export const App: React.FC = () => {
   );
 
   const handleToggleAll = useCallback(async () => {
-    const allCompleted = todos.length > 0 && todos.every(todo => todo.completed);
+    const allCompleted =
+      todos.length > 0 && todos.every(todo => todo.completed);
     const todosToUpdate = allCompleted
       ? todos.filter(todo => todo.completed)
       : todos.filter(todo => !todo.completed);
@@ -267,7 +271,8 @@ export const App: React.FC = () => {
 
   const activeTodosCount = todos.filter(todo => !todo.completed).length;
   const completedTodosCount = todos.filter(todo => todo.completed).length;
-  const isAllCompleted = todos.length > 0 && todos.every(todo => todo.completed);
+  const isAllCompleted =
+    todos.length > 0 && todos.every(todo => todo.completed);
 
   const shouldShowFooter = todos.length > 0;
 
@@ -324,9 +329,7 @@ export const App: React.FC = () => {
                     type="checkbox"
                     className="todo__status"
                     checked={todo.completed}
-                    onChange={() =>
-                      handleToggleTodo(todo.id, todo.completed)
-                    }
+                    onChange={() => handleToggleTodo(todo.id, todo.completed)}
                     disabled={isTodoLoading}
                   />
                 </label>
