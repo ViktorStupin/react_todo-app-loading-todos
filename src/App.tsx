@@ -125,7 +125,7 @@ export const App: React.FC = () => {
       }
 
       const tempTodoData: Todo = {
-        id: 0,
+        id: Date.now(),
         userId: USER_ID,
         title: trimmedTitle,
         completed: false,
@@ -140,6 +140,10 @@ export const App: React.FC = () => {
           userId: USER_ID,
           completed: false,
         });
+
+        if (!createdTodo.id) {
+          createdTodo.id = Date.now();
+        }
 
         setTodos(prev => [...prev, createdTodo]);
       } catch (error) {
