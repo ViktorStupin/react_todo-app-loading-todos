@@ -23,17 +23,31 @@ export const App: React.FC = () => {
   const [editingTodoId, setEditingTodoId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
 
-  // Додаємо ref для автоматичного фокусу
   const newTodoInputRef = useRef<HTMLInputElement>(null);
+  const errorTimeoutRef = useRef<NodeJS.Timeout>();
 
-  const showError = (message: string) => {
+  const showError = useCallback((message: string) => {
     setErrorMessage(message);
-    setTimeout(() => setErrorMessage(''), 3000);
-  };
 
-  const hideError = () => {
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
+
+    errorTimeoutRef.current = setTimeout(() => setErrorMessage(''), 3000);
+  }, []);
+
+  const hideError = useCallback(() => {
     setErrorMessage('');
-  };
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
+  }, []);
+
+  const focusInput = useCallback(() => {
+    if (newTodoInputRef.current) {
+      newTodoInputRef.current.focus();
+    }
+  }, []);
 
   const handleDeleteTodo = useCallback(async (id: number) => {
     setLoadingTodosIds(prev => [...prev, id]);
@@ -41,12 +55,13 @@ export const App: React.FC = () => {
     try {
       await deleteTodo(id);
       setTodos(prev => prev.filter(todo => todo.id !== id));
+      focusInput();
     } catch {
       showError('Unable to delete a todo');
     } finally {
       setLoadingTodosIds(prev => prev.filter(todoId => todoId !== id));
     }
-  }, []);
+  }, [focusInput, showError]);
 
   const handleStartEditing = (todo: Todo) => {
     setEditingTodoId(todo.id);
@@ -54,13 +69,16 @@ export const App: React.FC = () => {
   };
 
   const handleSaveEdit = async (id: number) => {
-    if (!editingTitle.trim()) {
+    const trimmedTitle = editingTitle.trim();
+
+    if (!trimmedTitle) {
       await handleDeleteTodo(id);
       setEditingTodoId(null);
       return;
     }
 
-    if (editingTitle === todos.find(todo => todo.id === id)?.title) {
+    const originalTodo = todos.find(todo => todo.id === id);
+    if (trimmedTitle === originalTodo?.title) {
       setEditingTodoId(null);
       return;
     }
@@ -68,7 +86,7 @@ export const App: React.FC = () => {
     setLoadingTodosIds(prev => [...prev, id]);
 
     try {
-      const updatedTodo = await updateTodo(id, { title: editingTitle.trim() });
+      const updatedTodo = await updateTodo(id, { title: trimmedTitle });
       setTodos(prev => prev.map(todo => (todo.id === id ? updatedTodo : todo)));
       setEditingTodoId(null);
     } catch {
@@ -99,10 +117,10 @@ export const App: React.FC = () => {
 
       if (!trimmedTitle) {
         showError('Title should not be empty');
+        focusInput();
         return;
       }
 
-      // Створюємо тимчасовий todo
       const tempTodoData: Todo = {
         id: 0,
         userId: USER_ID,
@@ -123,18 +141,13 @@ export const App: React.FC = () => {
         setTodos(prev => [...prev, createdTodo]);
       } catch (error) {
         showError('Unable to add a todo');
-        // Відновлюємо поле введення при помилці
         setNewTodoTitle(trimmedTitle);
       } finally {
         setTempTodo(null);
-      }
-
-      // Повертаємо фокус на поле введення після додавання
-      if (newTodoInputRef.current) {
-        newTodoInputRef.current.focus();
+        focusInput();
       }
     },
-    [newTodoTitle],
+    [newTodoTitle, focusInput, showError],
   );
 
   const handleToggleTodo = useCallback(
@@ -143,7 +156,6 @@ export const App: React.FC = () => {
 
       try {
         const updatedTodo = await updateTodo(id, { completed: !completed });
-
         setTodos(prev =>
           prev.map(todo => (todo.id === id ? updatedTodo : todo)),
         );
@@ -153,12 +165,16 @@ export const App: React.FC = () => {
         setLoadingTodosIds(prev => prev.filter(todoId => todoId !== id));
       }
     },
-    [],
+    [showError],
   );
 
   const handleToggleAll = useCallback(async () => {
-    const allCompleted = todos.every(todo => todo.completed);
-    const todosToUpdate = todos.filter(todo => todo.completed === allCompleted);
+    const allCompleted = todos.length > 0 && todos.every(todo => todo.completed);
+    const todosToUpdate = allCompleted
+      ? todos.filter(todo => todo.completed)
+      : todos.filter(todo => !todo.completed);
+
+    if (todosToUpdate.length === 0) return;
 
     setLoadingTodosIds(prev => [
       ...prev,
@@ -175,7 +191,6 @@ export const App: React.FC = () => {
       setTodos(prev =>
         prev.map(todo => {
           const updatedTodo = updatedTodos.find(t => t.id === todo.id);
-
           return updatedTodo || todo;
         }),
       );
@@ -186,10 +201,12 @@ export const App: React.FC = () => {
         prev.filter(id => !todosToUpdate.some(todo => todo.id === id)),
       );
     }
-  }, [todos]);
+  }, [todos, showError]);
 
   const handleClearCompleted = useCallback(async () => {
     const completedTodos = todos.filter(todo => todo.completed);
+
+    if (completedTodos.length === 0) return;
 
     setLoadingTodosIds(prev => [
       ...prev,
@@ -198,9 +215,9 @@ export const App: React.FC = () => {
 
     try {
       const deletePromises = completedTodos.map(todo => deleteTodo(todo.id));
-
       await Promise.all(deletePromises);
       setTodos(prev => prev.filter(todo => !todo.completed));
+      focusInput();
     } catch {
       showError('Unable to delete completed todos');
     } finally {
@@ -208,14 +225,8 @@ export const App: React.FC = () => {
         prev.filter(id => !completedTodos.some(todo => todo.id === id)),
       );
     }
-  }, [todos]);
+  }, [todos, focusInput, showError]);
 
-  // Умовний рендеринг повинен бути після всіх хуків
-  if (!USER_ID) {
-    return <UserWarning />;
-  }
-
-  // Хуки повинні бути викликані в тому ж порядку на кожному рендері
   useEffect(() => {
     setIsLoading(true);
     getTodos()
@@ -225,15 +236,23 @@ export const App: React.FC = () => {
       .catch(() => {
         showError('Unable to load todos');
       })
-      .finally(() => setIsLoading(false));
+      .finally(() => {
+        setIsLoading(false);
+        focusInput();
+      });
+  }, [focusInput, showError]);
+
+  useEffect(() => {
+    return () => {
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+    };
   }, []);
 
-  // Додаємо useEffect для автоматичного фокусу при завантаженні компонента
-  useEffect(() => {
-    if (newTodoInputRef.current) {
-      newTodoInputRef.current.focus();
-    }
-  }, []);
+  if (!USER_ID) {
+    return <UserWarning />;
+  }
 
   const filteredTodos = todos.filter(todo => {
     switch (filter) {
@@ -248,8 +267,9 @@ export const App: React.FC = () => {
 
   const activeTodosCount = todos.filter(todo => !todo.completed).length;
   const completedTodosCount = todos.filter(todo => todo.completed).length;
-  const isAllCompleted =
-    todos.length > 0 && todos.every(todo => todo.completed);
+  const isAllCompleted = todos.length > 0 && todos.every(todo => todo.completed);
+
+  const shouldShowFooter = todos.length > 0;
 
   return (
     <div className="todoapp">
@@ -257,13 +277,14 @@ export const App: React.FC = () => {
 
       <div className="todoapp__content">
         <header className="todoapp__header">
-          <button
-            type="button"
-            className={`todoapp__toggle-all ${isAllCompleted ? 'active' : ''}`}
-            data-cy="ToggleAllButton"
-            onClick={handleToggleAll}
-            disabled={todos.length === 0}
-          />
+          {todos.length > 0 && (
+            <button
+              type="button"
+              className={`todoapp__toggle-all ${isAllCompleted ? 'active' : ''}`}
+              data-cy="ToggleAllButton"
+              onClick={handleToggleAll}
+            />
+          )}
 
           <form onSubmit={handleAddTodo}>
             <input
@@ -280,6 +301,13 @@ export const App: React.FC = () => {
         </header>
 
         <section className="todoapp__main" data-cy="TodoList">
+          {isLoading && todos.length === 0 && (
+            <div data-cy="TodoLoader" className="modal overlay is-active">
+              <div className="modal-background has-background-white-ter" />
+              <div className="loader" />
+            </div>
+          )}
+
           {filteredTodos.map(todo => {
             const isTodoLoading = loadingTodosIds.includes(todo.id);
             const isEditing = editingTodoId === todo.id;
@@ -296,32 +324,32 @@ export const App: React.FC = () => {
                     type="checkbox"
                     className="todo__status"
                     checked={todo.completed}
-                    onChange={() => handleToggleTodo(todo.id, todo.completed)}
-                    disabled={isEditing}
+                    onChange={() =>
+                      handleToggleTodo(todo.id, todo.completed)
+                    }
+                    disabled={isTodoLoading}
                   />
                 </label>
 
                 {isEditing ? (
-                  <>
-                    <form
-                      onSubmit={e => {
-                        e.preventDefault();
-                        handleSaveEdit(todo.id);
-                      }}
-                    >
-                      <input
-                        data-cy="TodoTitleField"
-                        type="text"
-                        className="todo__title-field"
-                        placeholder="Empty todo will be deleted"
-                        value={editingTitle}
-                        onChange={e => setEditingTitle(e.target.value)}
-                        onKeyDown={e => handleEditKeyPress(e, todo.id)}
-                        onBlur={() => handleSaveEdit(todo.id)}
-                        autoFocus
-                      />
-                    </form>
-                  </>
+                  <form
+                    onSubmit={e => {
+                      e.preventDefault();
+                      handleSaveEdit(todo.id);
+                    }}
+                    onBlur={() => handleSaveEdit(todo.id)}
+                  >
+                    <input
+                      data-cy="TodoTitleField"
+                      type="text"
+                      className="todo__title-field"
+                      placeholder="Empty todo will be deleted"
+                      value={editingTitle}
+                      onChange={e => setEditingTitle(e.target.value)}
+                      onKeyDown={e => handleEditKeyPress(e, todo.id)}
+                      autoFocus
+                    />
+                  </form>
                 ) : (
                   <>
                     <span
@@ -385,7 +413,7 @@ export const App: React.FC = () => {
           )}
         </section>
 
-        {todos.length > 0 && (
+        {shouldShowFooter && (
           <footer className="todoapp__footer" data-cy="Footer">
             <span className="todo-count" data-cy="TodosCounter">
               {activeTodosCount} item{activeTodosCount !== 1 ? 's' : ''} left
